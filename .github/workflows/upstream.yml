@@ -101,7 +101,7 @@ jobs:
           for f in expansions/cards.cdb config/strings.conf config/configs.json "config/languages/简体中文/cards.cdb" repositories/cardscripts/utility.lua repositories/cardscripts/constant.lua; do
             [ -s "$r/$f" ] || { echo "::error::missing or empty: $f"; exit 1; }
           done
-          ls "$r/repositories/cardscripts/official" | head -1 > /dev/null
+          [ -d "$r/repositories/cardscripts/official" ] || { echo "::error::no official/ card scripts"; exit 1; }
           echo "data root ok"
 
   commit:
