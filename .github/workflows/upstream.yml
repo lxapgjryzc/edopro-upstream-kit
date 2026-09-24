@@ -1,0 +1,150 @@
+# 上游整合：每周把每个 pin 移到上游当前 HEAD，确认按新 pin 能全部检出、拼出数据根、编出 x64 引擎，全绿才提交锁文件。
+# 使用方把本仓库挂成 git submodule，由 Dependabot 跟随这里的提交；使用方自己的补丁与验收在使用方仓库里跑。
+#
+# 入口：
+#   push / pull_request    按当前锁文件检出并编译，确认锁文件本身可用
+#   schedule（每周一）      bump → 检出＋编译 → 全绿提交新锁文件；有红开（或追加到）一个 upstream 标签的 issue，锁文件不动
+#   workflow_dispatch      手动；bump=true 时同定时任务
+#
+# 锁文件经 job 输出（base64）在 job 之间传递，不经 artifact（artifact 占存储额度，额度满时整条升级会断）。
+name: upstream
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '17 3 * * 1'   # 每周一 03:17 UTC（北京时间 11:17）
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: '先把每个 pin 移到上游当前 HEAD，全绿后提交'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: upstream-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pins:
+    name: 上游版本
+    runs-on: ubuntu-latest
+    outputs:
+      bump: ${{ steps.mode.outputs.bump }}
+      changed: ${{ steps.bump.outputs.changed }}
+      run: ${{ steps.mode.outputs.bump != 'true' || steps.bump.outputs.changed == 'true' }}
+      lock: ${{ steps.lock.outputs.lock }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: 这次是哪种模式
+        id: mode
+        env:
+          EVENT: ${{ github.event_name }}
+          BUMP: ${{ github.event.inputs.bump }}
+        run: |
+          bump=false
+          if [ "$EVENT" = schedule ] || [ "$BUMP" = true ]; then bump=true; fi
+          echo "bump=$bump" >> "$GITHUB_OUTPUT"
+      - name: 把每个 pin 移到上游当前 HEAD
+        id: bump
+        if: steps.mode.outputs.bump == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          node upstream.cjs bump
+          if git diff --quiet -- upstream.lock.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::every pin is already at upstream HEAD"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git --no-pager diff -- upstream.lock.json
+          fi
+      - name: 这次的锁文件
+        id: lock
+        run: |
+          node upstream.cjs show
+          echo "lock=$(base64 -w0 upstream.lock.json)" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: 检出并编译（Windows x64）
+    needs: pins
+    if: needs.pins.outputs.run == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: 用 pins 算出的锁文件
+        env:
+          LOCK: ${{ needs.pins.outputs.lock }}
+        run: printf '%s' "$LOCK" | base64 -d > upstream.lock.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: 检出上游并拼数据根
+        run: node upstream.cjs fetch --dest "$RUNNER_TEMP/upstream"
+      - name: 编 ocgcore（x64 Release，不带任何补丁）
+        run: node upstream.cjs build --dest "$RUNNER_TEMP/upstream"
+      - name: 数据根自检
+        run: |
+          r="$RUNNER_TEMP/upstream/edopro"
+          for f in expansions/cards.cdb config/strings.conf config/configs.json "config/languages/简体中文/cards.cdb" repositories/cardscripts/utility.lua repositories/cardscripts/constant.lua; do
+            [ -s "$r/$f" ] || { echo "::error::missing or empty: $f"; exit 1; }
+          done
+          ls "$r/repositories/cardscripts/official" | head -1 > /dev/null
+          echo "data root ok"
+
+  commit:
+    name: 提交新锁文件，或记录失败
+    needs: [pins, build]
+    if: always() && needs.pins.outputs.bump == 'true' && (needs.pins.result != 'success' || needs.pins.outputs.changed == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - name: 用 pins 算出的锁文件
+        if: needs.pins.outputs.lock != ''
+        env:
+          LOCK: ${{ needs.pins.outputs.lock }}
+        run: printf '%s' "$LOCK" | base64 -d > upstream.lock.json
+      - name: 全绿：提交新锁文件
+        if: needs.pins.result == 'success' && needs.build.result == 'success'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add upstream.lock.json
+          git commit -m "升级上游至 $(date -u +%Y-%m-%d) [skip ci]"   # 刚检出并编译过，不为这次推送重跑
+          git pull --rebase origin "${{ github.ref_name }}"
+          git push origin "HEAD:${{ github.ref_name }}"
+      - name: 有红：开或追加一个 issue，锁文件不动
+        if: needs.pins.result != 'success' || needs.build.result != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RESULT: pins ${{ needs.pins.result }}, build ${{ needs.build.result }}
+        run: |
+          gh label create upstream --description "上游升级" --color D93F0B --force
+          {
+            echo "升级到上游 HEAD 失败（$RESULT），锁文件没有动。"
+            echo
+            echo "运行：$RUN_URL"
+            echo
+            echo "这次试的版本："
+            echo '```'
+            node upstream.cjs show
+            echo '```'
+          } > body.md
+          n=$(gh issue list --label upstream --state open --json number --jq '.[0].number')
+          if [ -n "$n" ]; then gh issue comment "$n" --body-file body.md
+          else gh issue create --title "上游升级失败：$(date -u +%Y-%m-%d)" --label upstream --body-file body.md; fi
