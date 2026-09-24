@@ -4,20 +4,20 @@
     "ygopro-core": {
       "url": "https://github.com/edo9300/ygopro-core",
       "branch": "master",
-      "commit": "122e0d091a0f399221a4510cc98a406ae485905f",
-      "date": "2026-09-06T16:51:51Z"
+      "commit": "874f09d9b76ebf4df5ae5e3de7c2d977162e3d99",
+      "date": "2026-09-23T19:55:23Z"
     },
     "BabelCDB": {
       "url": "https://github.com/ProjectIgnis/BabelCDB",
       "branch": "master",
-      "commit": "b369a49b4d68dc88a35884d5843b1e3eeea1db1a",
-      "date": "2026-09-11T11:13:35Z"
+      "commit": "aefb95380790ac5c7d1e36baaaf67b288e4a94fb",
+      "date": "2026-09-24T07:53:31Z"
     },
     "CardScripts": {
       "url": "https://github.com/ProjectIgnis/CardScripts",
       "branch": "master",
-      "commit": "751311918a74c20ce51958741d21d45d368e26bd",
-      "date": "2026-09-11T11:12:37Z"
+      "commit": "a8339a840bbe2e5fdbc0c43db33c2697fee81801",
+      "date": "2026-09-24T06:34:05Z"
     },
     "Distribution": {
       "url": "https://github.com/ProjectIgnis/Distribution",
@@ -29,8 +29,8 @@
     "ygopro-database": {
       "url": "https://github.com/mycard/ygopro-database",
       "branch": "master",
-      "commit": "ac5d8fb80465e74b33f3b4a294e3b22c02d743f2",
-      "date": "2026-08-30T12:35:06Z",
+      "commit": "5f69c0625f95d90f2d24336fa6139324c1c98742",
+      "date": "2026-09-24T02:11:37Z",
       "file": "locales/zh-CN/cards.cdb"
     }
   }
