@@ -40,3 +40,8 @@ node upstream.cjs env --dest D                           # 打印 EDOPRO_PATH=�
 这里的检查只证明「上游能检出、引擎能编」。新 pin 会不会改变某个作品的行为，由使用方在自己的仓库里跑验收判断：
 使用方用 Dependabot（`package-ecosystem: gitsubmodule`）跟随本仓库，每次锁文件前进，使用方就收到一个升级 submodule 的 PR，
 它自己的 CI 在 PR 上跑整套验收，全绿再合并。
+Dependabot 默认给新提交加冷却期；本仓库周一升级，使用方把检查排在周二并设 `cooldown: default-days: 1`，当周就能收到 PR。
+
+## 许可
+
+本仓库的脚本与工作流以 [MIT](LICENSE) 发布。它检出的上游（ygopro-core、EDOPro 的卡库与脚本等）不在本仓库里，各按其自身许可证使用。
